@@ -1,13 +1,9 @@
 ﻿#nullable disable
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
 using Shopping.Data;
 using Shopping.Data.Entities;
+using Shopping.Models;
 
 namespace Shopping.Controllers
 {
@@ -22,7 +18,9 @@ namespace Shopping.Controllers
 
         public async Task<IActionResult> Index()
         {
-            return View(await _context.Countries.ToListAsync());
+            return View(await _context.Countries
+                .Include(c => c.States)
+                .ToListAsync());
         }
 
         public async Task<IActionResult> Details(int? id)
@@ -32,7 +30,8 @@ namespace Shopping.Controllers
                 return NotFound();
             }
 
-            var country = await _context.Countries
+            Country country = await _context.Countries
+                .Include(c =>c.States)
                 .FirstOrDefaultAsync(m => m.Id == id);
             if (country == null)
             {
@@ -44,6 +43,7 @@ namespace Shopping.Controllers
 
         public IActionResult Create()
         {
+            Country country = new() { States = new List<State>()};
             return View();
         }
 
@@ -76,6 +76,64 @@ namespace Shopping.Controllers
                 }
             }
             return View(country);
+        }
+
+        public async Task<IActionResult> AddState(int? id)
+        {
+            if (id == null)
+            {
+                return NotFound();
+            }
+
+            Country country = await _context.Countries.FindAsync(id);
+            if (country == null)
+            {
+                return NotFound();
+            }
+
+            StateViewModel model = new()
+            {
+                CountryId = country.Id,
+            };
+
+            return View(model);
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> AddState(StateViewModel model)
+        {
+            if (ModelState.IsValid)
+            {
+                try
+                {
+                    State state = new()
+                    {
+                        Cities = new List<City>(),
+                        Country = await _context.Countries.FindAsync(model.CountryId),
+                        Name = model.Name,
+                    };
+                    _context.Add(state);
+                    await _context.SaveChangesAsync();
+                    return RedirectToAction(nameof(Details), new { id = model.CountryId });
+                }
+                catch (DbUpdateException dbUpdateException)
+                {
+                    if (dbUpdateException.InnerException.Message.Contains("duplicate"))
+                    {
+                        ModelState.AddModelError(string.Empty, "Ya existe un departamento/estado con el mismo nombre en este país.");
+                    }
+                    else
+                    {
+                        ModelState.AddModelError(string.Empty, dbUpdateException.InnerException.Message);
+                    }
+                }
+                catch (Exception exception)
+                {
+                    ModelState.AddModelError(string.Empty, exception.Message);
+                }
+            }
+            return View(model);
         }
 
         public async Task<IActionResult> Edit(int? id)
@@ -135,7 +193,9 @@ namespace Shopping.Controllers
                 return NotFound();
             }
 
-            Country country = await _context.Countries.FindAsync(id);
+            Country country = await _context.Countries
+                .Include(c=>c.States)
+                .FirstOrDefaultAsync(c => c.Id == id);
             if (country == null)
             {
                 return NotFound();
